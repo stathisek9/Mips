@@ -1,0 +1,290 @@
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+use work.types.all;
+
+entity serial_ctrl is
+  port (
+    clk      : in  bit_t;
+    rst      : in  bit_t;
+    extHold  : in  bit_t;
+    extDataR : in  byte_t;
+    extReq   : out bit_t;
+    extRw    : out bit_t;
+    extAddr  : out byte_t;
+    extDataW : out byte_t;
+    extAck   : out bit_t;
+    intReq   : in  bit_t;
+    intRw    : in  bit_t;
+    intDataW : in  word_t;
+    intDataR : out word_t;
+    intAck   : out bit_t;
+    intAddr  : in  word_t;
+    rdy      : out bit_t
+    );
+
+end serial_ctrl;
+
+architecture behavioral of serial_ctrl is
+
+  -- Registers containing the data that is being read or written
+  signal regData3  : byte_t;
+  signal nextData3 : byte_t;
+  signal regData2  : byte_t;
+  signal nextData2 : byte_t;
+  signal regData1  : byte_t;
+  signal nextData1 : byte_t;
+  signal regData0  : byte_t;
+  signal nextData0 : byte_t;
+
+  -- REgisters containing the addrsess
+  signal regAddr3  : byte_t;
+  signal nextAddr3 : byte_t;
+  signal regAddr2  : byte_t;
+  signal nextAddr2 : byte_t;
+  signal regAddr1  : byte_t;
+  signal nextAddr1 : byte_t;
+  signal regAddr0  : byte_t;
+  signal nextAddr0 : byte_t;
+
+  signal regRw, nextRw : bit_t;
+
+  signal shiftCnt  : unsigned(1 downto 0);
+  signal shiftNext : unsigned(1 downto 0);
+
+  -- State type and registers
+  type state_t is (idle, addrOutState, readRam, writeRam, outputState);
+  signal currState : state_t;
+  signal nextState : state_t;
+
+begin
+
+  -----------------------------------------------------------------------------
+  -- Updates the register values. Synchronous reset
+  -----------------------------------------------------------------------------
+  REG_PROC : process(clk)
+  begin
+    if clk = '1' and clk'event then
+      currState <= nextState;
+
+      regData3 <= nextData3;
+      regData2 <= nextData2;
+      regData1 <= nextData1;
+      regData0 <= nextData0;
+
+      regAddr3 <= nextAddr3;
+      regAddr2 <= nextAddr2;
+      regAddr1 <= nextAddr1;
+      regAddr0 <= nextAddr0;
+
+      shiftCnt <= shiftNext;
+
+      regRw <= nextRw;
+
+      if rst = '1' then
+        currState <= idle;
+
+        regData3 <= BYTE_ZERO;
+        regData2 <= BYTE_ZERO;
+        regData1 <= BYTE_ZERO;
+        regData0 <= BYTE_ZERO;
+
+        regAddr3 <= BYTE_ZERO;
+        regAddr2 <= BYTE_ZERO;
+        regAddr1 <= BYTE_ZERO;
+        regAddr0 <= BYTE_ZERO;
+
+        shiftCnt <= (others => '0');
+
+        regRw <= '1';
+      end if;
+    end if;
+  end process REG_PROC;
+
+  -----------------------------------------------------------------------------
+  -- Process to determine the nextState and reading/writing data
+  -----------------------------------------------------------------------------
+  FSM_PROC : process(currState, extDataR, extHold, intAddr(15 downto 8),
+                     intAddr(23 downto 16), intAddr(31 downto 24),
+                     intAddr(7 downto 0), intDataW(15 downto 8),
+                     intDataW(23 downto 16), intDataW(31 downto 24),
+                     intDataW(7 downto 0), intReq, intRw, regAddr0, regAddr1,
+                     regAddr2, regAddr3, regData0, regData1, regData2,
+                     regData3, regRw, shiftCnt)
+  begin
+    -- To external mem
+    extReq   <= '0';
+    extRw    <= '1';
+    extAddr  <= BYTE_ZERO;
+    extDataW <= BYTE_ZERO;
+    extAck   <= '0';
+
+    -- To internal mem
+    intAck   <= '0';
+    intDataR <= WORD_ZERO;
+
+    rdy <= '1';
+
+    -- Next register
+    nextState <= idle;
+
+    nextData3 <= BYTE_ZERO;
+    nextData2 <= BYTE_ZERO;
+    nextData1 <= BYTE_ZERO;
+    nextData0 <= BYTE_ZERO;
+
+    nextAddr3 <= intAddr(31 downto 24);
+    nextAddr2 <= intAddr(23 downto 16);
+    nextAddr1 <= intAddr(15 downto 8);
+    nextAddr0 <= intAddr(7 downto 0);
+
+    shiftNext <= (others => '0');
+
+    nextRw <= intRw;
+
+    case currState is
+      -- Idle state: If request to read from off-chip mem move to readRam state,
+      -- if request to write then move to writeRam state.
+      -- On memeory request output the 8 highest order bits of the addr
+      when idle =>
+        if intReq = '1' then
+          extReq    <= '1';
+          extAddr   <= intAddr(31 downto 24);
+          nextAddr3 <= intAddr(23 downto 16);
+          nextAddr2 <= intAddr(15 downto 8);
+          nextAddr1 <= intAddr(7 downto 0);
+          nextAddr0 <= BYTE_ZERO;
+
+          nextData3 <= intDataW(31 downto 24);
+          nextData2 <= intDataW(23 downto 16);
+          nextData1 <= intDataW(15 downto 8);
+          nextData0 <= intDataW(7 downto 0);
+
+          nextState <= addrOutState;
+        end if;
+
+      when addrOutState =>
+        extReq  <= '1';
+        extAddr <= regAddr3;
+
+        rdy <= '0';
+
+        nextAddr3 <= regAddr2;
+        nextAddr2 <= regAddr1;
+        nextAddr1 <= regAddr0;
+        nextAddr0 <= BYTE_ZERO;
+
+        nextData3 <= regData3;
+        nextData2 <= regData2;
+        nextData1 <= regData1;
+        nextData0 <= regData0;
+
+        nextRw <= regRw;
+
+        shiftNext <= shiftCnt + 1;
+        nextState <= addrOutState;
+        if shiftCnt = "10" then
+          if regRw = '1' then
+            nextState <= readRam;
+            shiftNext <= (others => '0');
+          elsif regRw = '0' then
+            nextState <= writeRam;
+            shiftNext <= (others => '0');
+            extDataW  <= regData3;
+            nextData3 <= regData2;
+            nextData2 <= regData1;
+            nextData1 <= regData0;
+            nextData0 <= BYTE_ZERO;
+          else
+            nextState <= idle;
+          end if;
+        end if;
+
+      when readRam =>
+        rdy    <= '0';
+        extReq <= '1';
+        if extHold = '0' then
+          nextData0 <= extDataR;
+          nextData1 <= regData0;
+          nextData2 <= regData1;
+          nextData3 <= regData2;
+
+          nextState <= readRam;
+
+          nextRw <= regRw;
+
+          shiftNext <= shiftCnt +1;
+          if shiftCnt = "11" then
+            nextState <= outputState;
+            shiftNext <= (others => '0');
+          end if;
+        else
+          shiftNext <= shiftCnt;
+          nextData3 <= regData3;
+          nextData2 <= regData2;
+          nextData1 <= regData1;
+          nextData0 <= regData0;
+        end if;
+
+
+      when writeRam =>
+        rdy    <= '0';
+        extReq <= '1';
+        extRw  <= '0';
+
+        nextRw <= regRw;
+
+        extDataW <= regData3;
+
+        if extHold = '0' then
+          nextData3 <= regData2;
+          nextData2 <= regData1;
+          nextData1 <= regData0;
+          nextData0 <= BYTE_ZERO;
+
+          shiftNext <= shiftCnt + 1;
+
+          nextState <= writeRam;
+
+          if shiftCnt = "10" then
+            nextState <= idle;
+            shiftNext <= (others => '0');
+            extAck    <= '1';
+            intAck    <= '1';
+          end if;
+        else
+          shiftNext <= shiftCnt;
+          nextData3 <= regData3;
+          nextData2 <= regData2;
+          nextData1 <= regData1;
+          nextData0 <= regData0;
+        end if;
+
+      when outputState =>
+        rdy <= '0';
+        extAck    <= '1';
+        intAck    <= '1';
+        intDataR  <= regData3 & regData2 & regData1 & regData0;
+        nextState <= idle;
+        --if intReq = '1' then
+        --  extReq    <= '1';
+        --  extAddr   <= intAddr(31 downto 24);
+        --  nextAddr3 <= intAddr(23 downto 16);
+        --  nextAddr2 <= intAddr(15 downto 8);
+        --  nextAddr1 <= intAddr(7 downto 0);
+        --  nextAddr0 <= BYTE_ZERO;
+        --  nextState <= addrOutState;
+        --  nextData3 <= intDataW(31 downto 24);
+        --  nextData2 <= intDataW(23 downto 16);
+        --  nextData1 <= intDataW(15 downto 8);
+        --  nextData0 <= intDataW(7 downto 0);
+
+        --end if;
+    end case;
+
+
+  end process FSM_PROC;
+
+end behavioral;
+
+

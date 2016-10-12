@@ -1,0 +1,104 @@
+-------------------------------------------------------------------------------
+-- Title      : Testbench for design "serial_ctrl"
+-- Project    : 
+-------------------------------------------------------------------------------
+-- File       : serial_ctrl_tb.vhd
+-- Author     :   <HenkeH@HENKEH-DATOR>
+-- Company    : 
+-- Created    : 2015-05-31
+-- Last update: 2015-05-31
+-- Platform   : 
+-- Standard   : VHDL'93/02
+-------------------------------------------------------------------------------
+-- Description: 
+-------------------------------------------------------------------------------
+-- Copyright (c) 2015 
+-------------------------------------------------------------------------------
+-- Revisions  :
+-- Date        Version  Author  Description
+-- 2015-05-31  1.0      HenkeH	Created
+-------------------------------------------------------------------------------
+
+library ieee;
+use ieee.std_logic_1164.all;
+
+-------------------------------------------------------------------------------
+
+entity serial_ctrl_tb is
+
+end entity serial_ctrl_tb;
+
+-------------------------------------------------------------------------------
+
+architecture serial_tb of serial_ctrl_tb is
+
+  -- component ports
+  signal clk      : bit_t;
+  signal rst      : bit_t;
+  signal extHold  : bit_t;
+  signal extDataR : byte_t;
+  signal extReq   : bit_t;
+  signal extRw    : bit_t;
+  signal extAddr  : byte_t;
+  signal extDataW : byte_t;
+  signal extAck   : bit_t;
+  signal extBurst : bit_t;
+  signal intReq   : bit_t;
+  signal intRw    : bit_t;
+  signal intDataW : word_t;
+  signal intDataR : word_t;
+  signal intAck   : bit_t;
+  signal intBurst : bit_t;
+  signal intAddr  : word_t;
+  signal intRdy   : bit_t;
+
+  -- clock
+  signal Clk : std_logic := '1';
+
+begin  -- architecture serial_tb
+
+  -- component instantiation
+  DUT: entity work.serial_ctrl
+    port map (
+      clk      => clk,
+      rst      => rst,
+      extHold  => extHold,
+      extDataR => extDataR,
+      extReq   => extReq,
+      extRw    => extRw,
+      extAddr  => extAddr,
+      extDataW => extDataW,
+      extAck   => extAck,
+      extBurst => extBurst,
+      intReq   => intReq,
+      intRw    => intRw,
+      intDataW => intDataW,
+      intDataR => intDataR,
+      intAck   => intAck,
+      intBurst => intBurst,
+      intAddr  => intAddr,
+      intRdy   => intRdy);
+
+  -- clock generation
+  Clk <= not Clk after 10 ns;
+
+  -- waveform generation
+  WaveGen_Proc: process
+  begin
+    -- insert signal assignments here
+
+    wait until Clk = '1';
+  end process WaveGen_Proc;
+
+  
+
+end architecture serial_tb;
+
+-------------------------------------------------------------------------------
+
+configuration serial_ctrl_tb_serial_tb_cfg of serial_ctrl_tb is
+  for serial_tb
+  end for;
+end serial_ctrl_tb_serial_tb_cfg;
+
+-------------------------------------------------------------------------------

@@ -1,0 +1,104 @@
+-------------------------------------------------------------------------------
+-- Title      : Testbench for design "test_sys"
+-- Project    : 
+-------------------------------------------------------------------------------
+-- File       : test_sys_tb.vhd
+-- Author     : Henrik Ljunger  <ael10hlj@kalv.fransg.eit.lth.se>
+-- Company    : 
+-- Created    : 2015-05-22
+-- Last update: 2015-05-22
+-- Platform   : 
+-- Standard   : VHDL'87
+-------------------------------------------------------------------------------
+-- Description: 
+-------------------------------------------------------------------------------
+-- Copyright (c) 2015 
+-------------------------------------------------------------------------------
+-- Revisions  :
+-- Date        Version  Author  Description
+-- 2015-05-22  1.0      ael10hlj        Created
+-------------------------------------------------------------------------------
+
+library ieee;
+use ieee.std_logic_1164.all;
+use work.types.all;
+
+-------------------------------------------------------------------------------
+
+entity test_sys_tb is
+
+end test_sys_tb;
+
+-------------------------------------------------------------------------------
+
+architecture test_tb of test_sys_tb is
+
+  component test_sys
+    port (
+      clk       : in  bit_t;
+      rst       : in  bit_t;
+      branchSel : in  bit_t;
+      stall     : in  bit_t;
+      branchPc  : in  word_t;
+      pcInc     : out word_t;
+      pc        : out word_t);
+  end component;
+
+  signal clk       : bit_t;
+  signal rst       : bit_t;
+  signal branchSel : bit_t;
+  signal stall     : bit_t;
+  signal branchPc  : word_t;
+  signal pcInc     : word_t;
+  signal pc        : word_t;
+
+  constant clk_period : time := 10 ns;
+  
+begin  -- test_tb
+
+  CLK_PROC : process
+  begin
+    clk <= '0';
+    wait for clk_period/2;
+    clk <= '1';
+    wait for clk_period/2;
+  end process CLK_PROC;
+
+  STIM_PROC : process
+  begin
+    rst <= '1';
+    branchSel <= '0';
+    stall <= '0';
+    branchPc <= (others => '0');
+    wait for clk_period;
+    rst <= '0';
+    wait for clk_period;
+    wait until clk = '1';
+
+    branchPc <= x"00400000";
+    wait for clk_period;
+    branchSel <= '1';
+    wait for clk_period;
+    branchSel <= '0';
+    wait for clk_period*4;
+    stall <= '1';
+    wait for clk_period*2;
+    stall <= '0';
+
+    wait;
+    
+  end process STIM_PROC;
+
+
+  DUT : test_sys
+    port map (
+      clk       => clk,
+      rst       => rst,
+      branchSel => branchSel,
+      stall     => stall,
+      branchPc  => branchPc,
+      pcInc     => pcInc,
+      pc        => pc);
+
+
+end test_tb;

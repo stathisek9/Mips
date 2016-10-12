@@ -1,0 +1,157 @@
+library ieee;
+use ieee.STD_LOGIC_1164.all;
+use ieee.numeric_std.all;
+use work.all;
+use work.types.all;
+
+entity memwrapper is
+
+  port (
+    clk       : in  bit_t;
+    writeData : in  word_t;
+    addr      : in  word_t;
+    rw_n      : in  bit_t;
+    memReq    : in  bit_t;
+    wValid    : in  bit_t;
+    wDirty    : in  bit_t;
+    rdy       : out bit_t;
+    valid     : out bit_t;
+    dirty     : out bit_t;
+    rTag      : out tag_t;
+    readData  : out word_t);
+
+end memwrapper;
+
+architecture behavioral of memwrapper is
+
+  component ST_SPHDL_4800x64m16
+    generic (
+      Words                     : natural;
+      Bits                      : natural;
+      Addr                      : natural;
+      mux                       : natural;
+      ConfigFault               : boolean;
+      max_faults                : natural;
+      Fault_file_name           : string;
+      MEM_INITIALIZE            : boolean;
+      BinaryInit                : integer;
+      InitFileName              : string;
+      Corruption_Read_Violation : boolean;
+      InstancePath              : string;
+      Debug_mode                : string);
+    port (
+      Q       : out std_logic_vector(63 downto 0);
+      RY      : out std_logic;
+      CK      : in  std_logic;
+      CSN     : in  std_logic;
+      TBYPASS : in  std_logic;
+      WEN     : in  std_logic;
+      A       : in  std_logic_vector(12 downto 0);
+      D       : in  std_logic_vector(63 downto 0));
+  end component;
+
+  ------------------------------------------------------------------------------
+  -- Constants for the memory
+  -----------------------------------------------------------------------------
+  constant Words                     : natural := 4800;
+  constant Bits                      : natural := 64;
+  constant AddrC                     : natural := 13;
+  constant mux                       : natural := 16;
+  constant ConfigFault               : boolean := false;
+  constant max_faults                : natural := 20;
+  constant Fault_file_name           : string  := "ST_SPHDL_4800x64m16_faults.txt";
+  constant MEM_INITIALIZE            : boolean := false;
+  constant BinaryInit                : integer := 0;
+  constant InitFileName              : string  := "ST_SPHDL_4800x64m16.cde";
+  constant Corruption_Read_Violation : boolean := true;
+  constant InstancePath              : string  := "ST_SPHDL_4800x64m16";
+  constant Debug_mode                : string  := "ALL_WARNING_MODE";
+
+  -----------------------------------------------------------------------------
+  -- Signals
+  -----------------------------------------------------------------------------
+  signal rMiss_i   : bit_t;
+  signal wMiss_i   : bit_t;
+  signal TBYPASS_i : bit_t;
+  signal tag_i     : tag_t;
+  signal index_i   : index_t;
+  signal addr_i    : word_t;
+  signal tagComp_i : bit_t;
+  signal rTag_i    : tag_t;
+  signal rValid_i  : bit_t;
+  signal rDirty_i  : bit_t;
+  signal rData_i   : word_t;
+  signal Q_i       : doubleword_t;
+  signal RY_i      : bit_t;
+  signal CSN_i     : bit_t;
+  signal WEN_i     : bit_t;
+  signal D_i       : doubleword_t;
+
+ --for ST_SPHDL_4800x64m16_1 : ST_SPHDL_4800x64m16
+ --  use configuration Cfg_ST_SPHDL_4800x64m16;
+
+begin  -- behavioral
+
+  ST_SPHDL_4800x64m16_1 : ST_SPHDL_4800x64m16
+   generic map (
+     Words                     => Words,
+     Bits                      => Bits,
+      Addr                      => AddrC,
+      mux                       => mux,
+      ConfigFault               => ConfigFault,
+      max_faults                => max_faults,
+      Fault_file_name           => Fault_file_name,
+      MEM_INITIALIZE            => MEM_INITIALIZE,
+      BinaryInit                => BinaryInit,
+      InitFileName              => InitFileName,
+      Corruption_Read_Violation => Corruption_Read_Violation,
+      InstancePath              => InstancePath,
+      Debug_mode                => Debug_mode)
+    port map (
+      Q       => Q_i,
+      RY      => RY_i,
+      CK      => clk,
+      CSN     => CSN_i,
+      TBYPASS => TBYPASS_i,
+      WEN     => WEN_i,
+      A       => index_i,
+      D       => D_i);
+
+  rdy <= RY_i;
+
+  CSN_i <= not(memReq);
+
+  TBYPASS_i <= '0';
+
+  WEN_i <= rw_n;
+
+  addr_i <= addr;
+
+  index_i <= addr_i(14 downto 2);
+
+  tag_i <= addr_i(31 downto 15);
+
+  D_i <= FILL_ZERO & wValid & wDirty & tag_i & writeData;
+
+  rValid_i <= Q_i(50);
+
+  rDirty_i <= Q_i(49);
+
+  rTag_i <= Q_i(48 downto 32);
+
+  rData_i <= Q_i(31 downto 0);
+
+  readData <= rData_i;
+
+  rTag <= rTag_i;
+
+  tagComp_i <= '1' when rTag_i = tag_i else
+               '0';
+
+  valid <= '1' when rValid_i = '1' else
+           '0';
+
+  dirty <= '1' when rDirty_i = '1' else
+           '0';
+
+end behavioral;

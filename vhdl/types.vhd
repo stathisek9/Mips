@@ -1,0 +1,159 @@
+-- -----------------------------------------------------------------------------
+--
+--  Title      :  Useful types and constants in a nice package.
+--             :
+--  Developers :  Niels Haandbaek -- c958307@student.dtu.dk
+--             :  Michael Kristensen - c973396@student.dtu.dk
+--             :  Hans Holten-Lund - hahl@imm.dtu.dk
+--             :  Chenxin Zhang - Chenxin.Zhang@eit.lth.se
+--             :
+--  Purpose    :  This design contains a package with types and constants. The
+--             :  types are std_logic_vector's with names and sizes that 
+--             :  correspond to the standard MIPS notation.
+--             :
+--  Revision   :  1.0  27-08-99  Initial version
+--             :  2.0  01-09-02  Modified to 32-bit MIPS
+--             :  2.1  29-09-03  Added andi,ori,xori
+--             :  3.0  03-02-05  Now compatible with GCC (int only)!
+--             :                 Added sllv,srlv,srav,bltz,bgez,blez,bgtz,
+--             :                 slti,sltiu,jalr
+--             ;  4.0  06-12-10  Added multu, mfhi, mflo
+--
+-- -----------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+--    Type name |  MIPS name | size in bits 
+--        bit_t |     bit    | 1
+--       byte_t |    byte    | 8
+--   halfword_t |  halfword  | 16
+--       word_t |    word    | 32
+-- doubleword_t | doubleword | 64
+-- The constants can be used to set all bits in a signal or variable of type 
+-- byte_t, halfword_t, word_t and doubleword_t to either '0', '1', 'X' or 'Z'.
+--------------------------------------------------------------------------------
+
+library IEEE;
+use IEEE.std_logic_1164.all;
+
+package types is
+  subtype bit_t is std_logic;
+  subtype byte_t is std_logic_vector(7 downto 0);
+  subtype halfword_t is std_logic_vector(15 downto 0);
+  subtype word_t is std_logic_vector(31 downto 0);
+  subtype doubleword_t is std_logic_vector(63 downto 0);
+
+  constant BYTE_ZERO : byte_t := "00000000";
+  constant BYTE_ONE  : byte_t := "11111111";
+  constant BYTE_X    : byte_t := "XXXXXXXX";
+  constant BYTE_Z    : byte_t := "ZZZZZZZZ";
+
+  constant HALFWORD_ZERO : halfword_t := byte_zero & byte_zero;
+  constant HALFWORD_ONE  : halfword_t := byte_one & byte_one;
+  constant HALFWORD_X    : halfword_t := byte_x & byte_x;
+  constant HALFWORD_Z    : halfword_t := byte_z & byte_z;
+
+  constant WORD_ZERO         : word_t := halfword_zero & halfword_zero;
+  constant WORD_ONE          : word_t := halfword_one & halfword_one;
+  constant WORD_X            : word_t := halfword_x & halfword_x;
+  constant WORD_Z            : word_t := halfword_z & halfword_z;
+  constant INSTRUCTION_START : word_t := x"00400000";
+  constant DATA_START        : word_t := x"10010000";
+
+  constant DOUBLEWORD_ZERO : doubleword_t := word_zero & word_zero;
+  constant DOUBLEWORD_ONE  : doubleword_t := word_one & word_one;
+  constant DOUBLEWORD_X    : doubleword_t := word_x & word_x;
+  constant DOUBLEWORD_Z    : doubleword_t := word_z & word_z;
+
+  constant DATA_WIDTH     : integer := 32;
+  constant NBR_OF_REG     : integer := 32;
+  constant REG_ADDR_WIDTH : integer := 5;
+  constant SEL_WIDTH      : integer := 2;
+
+  subtype RegAddr_t is std_logic_vector(4 downto 0);
+  subtype PcSel_t is std_logic_vector(1 downto 0);
+  subtype BranchField_t is std_logic_vector(4 downto 0);
+  subtype SrcBSel_t is std_logic_vector(1 downto 0);
+  subtype OpCode_t is std_logic_vector(5 downto 0);
+  subtype FuncCode_t is std_logic_vector(5 downto 0);
+  subtype RegSel_t is std_logic_vector(1 downto 0);
+  subtype AluSel_t is std_logic_vector(4 downto 0);
+  subtype Shamt_t is std_logic_vector(4 downto 0);
+  subtype forwardSel_t is std_logic_vector(1 downto 0);
+  subtype tag_t is std_logic_vector(16 downto 0);
+  subtype index_t is std_logic_vector(12 downto 0);
+  subtype blockCnt_t is std_logic_vector(4 downto 0);
+
+  subtype memAddr_t is std_logic_vector(7 downto 0);
+  subtype addrCnt_t is std_logic_vector(4 downto 0);
+
+  constant counterLimit : addrCnt_t := (others => '1');
+
+
+
+  -- These constants enable easier-to-read identification of instructions.
+  -- Opcode field
+  constant OP_RFORMAT   : OpCode_t := "000000";
+  constant OP_BLTZ_BGEZ : OpCode_t := "000001";
+  constant OP_J         : OpCode_t := "000010";
+  constant OP_JAL       : OpCode_t := "000011";
+  constant OP_BEQ       : OpCode_t := "000100";
+  constant OP_BNE       : OpCode_t := "000101";
+  constant OP_BLEZ      : OpCode_t := "000110";
+  constant OP_BGTZ      : OpCode_t := "000111";
+  constant OP_ADDIU     : OpCode_t := "001001";
+  constant OP_SLTI      : OpCode_t := "001010";
+  constant OP_SLTIU     : OpCode_t := "001011";
+  constant OP_ANDI      : OpCode_t := "001100";
+  constant OP_ORI       : OpCode_t := "001101";
+  constant OP_XORI      : OpCode_t := "001110";
+  constant OP_LUI       : OpCode_t := "001111";
+  constant OP_LW        : OpCode_t := "100011";
+  constant OP_SW        : OpCode_t := "101011";
+
+
+  --ALU OPERATIONS
+  constant ALU_NOP   : AluSel_t := "00000";
+  constant ALU_SLL   : AluSel_t := "00001";
+  constant ALU_SRL   : AluSel_t := "00010";
+  constant ALU_SRA   : AluSel_t := "00100";
+  constant ALU_MFHI  : AluSel_t := "00110";
+  constant ALU_MFLO  : AluSel_t := "01000";
+  constant ALU_MULTU : AluSel_t := "01010";
+  constant ALU_ADDU  : AluSel_t := "01100";
+  constant ALU_SUBU  : AluSel_t := "01110";
+  constant ALU_AND   : AluSel_t := "10000";
+  constant ALU_OR    : AluSel_t := "10010";
+  constant ALU_XOR   : AluSel_t := "10100";
+  constant ALU_NOR   : AluSel_t := "10110";
+  constant ALU_SLT   : AluSel_t := "11000";
+  constant ALU_SLTU  : AluSel_t := "11010";
+  constant ALU_LUI   : AluSel_t := "11110";
+
+  -- Function field
+  constant FUNCT_SLL   : FuncCode_t := "000000";
+  constant FUNCT_SRL   : FuncCode_t := "000010";
+  constant FUNCT_SRA   : FuncCode_t := "000011";
+  constant FUNCT_SLLV  : FuncCode_t := "000100";
+  constant FUNCT_SRLV  : FuncCode_t := "000110";
+  constant FUNCT_SRAV  : FuncCode_t := "000111";
+  constant FUNCT_JR    : FuncCode_t := "001000";
+  constant FUNCT_JALR  : FuncCode_t := "001001";
+  constant FUNCT_MFHI  : FuncCode_t := "001010";
+  constant FUNCT_MFLO  : FuncCode_t := "001100";
+  constant FUNCT_MULTU : FuncCode_t := "011001";
+  constant FUNCT_ADDU  : FuncCode_t := "100001";
+  constant FUNCT_SUBU  : FuncCode_t := "100011";
+  constant FUNCT_AND   : FuncCode_t := "100100";
+  constant FUNCT_OR    : FuncCode_t := "100101";
+  constant FUNCT_XOR   : FuncCode_t := "100110";
+  constant FUNCT_NOR   : FuncCode_t := "100111";
+  constant FUNCT_SLT   : FuncCode_t := "101010";
+  constant FUNCT_SLTU  : FuncCode_t := "101011";
+
+  constant FUNCT_NOP : FuncCode_t := "111111";
+
+end types;
+
+package body types is
+
+end types;

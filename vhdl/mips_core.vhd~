@@ -1,0 +1,623 @@
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+use work.types.all;
+
+entity mips_core is
+
+  port (
+    clk        : in  bit_t;
+    rst        : in  bit_t;
+    iRdata     : in  word_t;
+    memHold    : in  bit_t;
+    dReadData  : in  word_t;
+    iAddr      : out word_t;
+    dAddr      : out word_t;
+    dRw_n      : out bit_t;
+    dReq       : out bit_t;
+    dWriteData : out word_t
+    );
+
+end mips_core;
+
+architecture structural of mips_core is
+  -----------------------------------------------------------------------------
+  -- Component Declarations
+  -----------------------------------------------------------------------------
+  component if_stage
+    port (
+      clk       : in  bit_t;
+      rst       : in  bit_t;
+      branchSel : in  bit_t;
+      stall     : in  bit_t;
+      branchPc  : in  word_t;
+      pcInc     : out word_t;
+      pc        : out word_t
+      );
+  end component;
+
+  component id_stage is
+    port (
+      clk         : in  bit_t;
+      rst         : in  bit_t;
+      pc          : in  word_t;
+      iData       : in  word_t;
+      pcSel       : in  PcSel_t;
+      writeEn     : in  bit_t;
+      writeData   : in  word_t;
+      writeAddr   : in  RegAddr_t;
+      forwardSelA : in  forwardSel_t;
+      forwardSelB : in  forwardSel_t;
+      srcIDEX     : in  word_t;
+      srcEXMEM    : in  word_t;
+      srcMEMWB    : in  word_t;
+      srcBSel     : in  srcBSel_t;
+      srcASel     : in  bit_t;
+      regSel      : in  RegSel_t;
+      regDest     : out RegAddr_t;
+      srcAAddr    : out RegAddr_t;
+      srcBAddr    : out RegAddr_t;
+      compEq      : out bit_t;
+      compZ       : out bit_t;
+      gtz         : out bit_t;
+      srcA        : out word_t;
+      srcB        : out word_t;
+      branchPc    : out word_t);
+  end component id_stage;
+
+  component ctrl
+    port (
+      clk         : in  bit_t;
+      rst         : in  bit_t;
+      opCode      : in  OpCode_t;
+      funcCode    : in  FuncCode_t;
+      compEq      : in  bit_t;
+      compZ       : in  bit_t;
+      gtz         : in  bit_t;
+      branchField : in  BranchField_t;
+      branchSel   : out bit_t;
+      regWriteEn  : out bit_t;
+      pcSel       : out PcSel_t;
+      srcASel     : out bit_t;
+      srcBSel     : out SrcBSel_t;
+      aluSel      : out AluSel_t;
+      memRw_n     : out bit_t;
+      memReq      : out bit_t;
+      regSel      : out RegSel_t;
+      memRegSel   : out bit_t);
+  end component;
+
+  component ex_stage is
+    port (
+      clk        : in  bit_t;
+      rst        : in  bit_t;
+      aluSel     : in  AluSel_t;
+      srcA       : in  word_t;
+      srcB       : in  word_t;
+      aluFSelA   : in  bit_t;
+      aluFSelB   : in  bit_t;
+      forwardSrc : in  word_t;
+      aluRes     : out word_t);
+  end component ex_stage;
+
+  component forwardingunit is
+    port (
+      IFIDsrcA      : in  RegAddr_t;
+      IFIDsrcB      : in  RegAddr_t;
+      IDEXdest      : in  RegAddr_t;
+      EXMEMdest     : in  RegAddr_t;
+      MEMWBdest     : in  RegAddr_t;
+      IDEXregWrite  : in  bit_t;
+      EXMEMregWrite : in  bit_t;
+      MEMWBregWrite : in  bit_t;
+      MEMWBmemSel   : in  bit_t;
+      IDEXsrcA      : in  RegAddr_t;
+      IDEXsrcB      : in  RegAddr_t;
+      aluFSelA      : out bit_t;
+      aluFSelB      : out bit_t;
+      forwardSelA   : out forwardSel_t;
+      forwardSelB   : out forwardSel_t);
+  end component forwardingunit;
+
+  component stallunit is
+    port (
+      memHold        : in  bit_t;
+      IDEXsrcA       : in  RegAddr_t;
+      IDEXsrcB       : in  RegAddr_t;
+      EXMEMmemRegSel : in  bit_t;
+      EXMEMdest      : in  RegAddr_t;
+      stall          : out bit_t);
+  end component stallunit;
+
+  -----------------------------------------------------------------------------
+  -- Signals Declarations
+  -----------------------------------------------------------------------------
+
+  -- Pipeline register
+  signal IFIDPc        : word_t;
+  signal IFIDPcNext    : word_t;
+  signal IFIDPcInc     : word_t;
+  signal IFIDPcIncNext : word_t;
+  signal IFIDiData     : word_t;
+  signal IFIDiDataNext : word_t;
+  -- IDEX
+
+  signal IDEXdest           : RegAddr_t;
+  signal IDEXdestNext       : RegAddr_t;
+  signal IDEXsrcAAddr       : RegAddr_t;
+  signal IDEXsrcBAddr       : RegAddr_t;
+  signal IDEXsrcAAddrNext   : RegAddr_t;
+  signal IDEXsrcBAddrNext   : RegAddr_t;
+  signal IDEXsrcA           : word_t;
+  signal IDEXsrcANext       : word_t;
+  signal IDEXsrcB           : word_t;
+  signal IDEXsrcBNext       : word_t;
+  signal IDEXaluSel         : AluSel_t;
+  signal IDEXaluSelNext     : AluSel_t;
+  signal IDEXregWEn         : bit_t;
+  signal IDEXregWEnNext     : bit_t;
+  signal IDEXmemReq         : bit_t;
+  signal IDEXmemReqNext     : bit_t;
+  signal IDEXmemRw          : bit_t;
+  signal IDEXmemRwNext      : bit_t;
+  signal IDEXmemRegSel      : bit_t;
+  signal IDEXmemRegSelNext  : bit_t;
+  -- EXMEM
+  signal EXMEMaluRes        : word_t;
+  signal EXMEMaluResNext    : word_t;
+  signal EXMEMsrcB          : word_t;
+  signal EXMEMsrcBNext      : word_t;
+  signal EXMEMmemRegSel     : bit_t;
+  signal EXMEMmemRegSelNext : bit_t;
+  signal EXMEMmemRw         : bit_t;
+  signal EXMEMmemRwNext     : bit_t;
+  signal EXMEMmemReq        : bit_t;
+  signal EXMEMmemReqNext    : bit_t;
+  signal EXMEMregWEn        : bit_t;
+  signal EXMEMregWenNext    : bit_t;
+  signal EXMEMdest          : RegAddr_t;
+  signal EXMEMdestNext      : RegAddr_t;
+  -- MEMWB
+  signal MEMWBaluRes        : word_t;
+  signal MEMWBaluResNext    : word_t;
+  signal MEMWBmemData       : word_t;
+  signal MEMWBmemDataNext   : word_t;
+  signal MEMWBmemRegSel     : bit_t;
+  signal MEMWBmemRegSelNext : bit_t;
+  signal MEMWBregWen        : bit_t;
+  signal MEMWBregWEnNext    : bit_t;
+  signal MEMWBdest          : RegAddr_t;
+  signal MEMWBdestNext      : RegAddr_t;
+
+  signal regBranchTaken  : bit_t;
+  signal nextBranchTaken : bit_t;
+
+  -- internal signals
+
+  -- IF
+  signal branchSel_i : bit_t;
+  signal branchPc_i  : word_t;
+  signal pcInc_i     : word_t;
+  signal pc_i        : word_t;
+  signal stallIF_i   : bit_t;
+
+  -- ID
+  signal iData_i        : word_t;
+  signal pcSel_i        : PcSel_t;
+  signal regWriteEn_i   : bit_t;
+  signal regWriteData_i : word_t;
+  signal regWriteAddr_i : RegAddr_t;
+  signal compEq_i       : bit_t;
+  signal compZ_i        : bit_t;
+  signal gtz_i          : bit_t;
+  signal srcA_i         : word_t;
+  signal srcB_i         : word_t;
+  signal srcASel_i      : bit_t;
+  signal srcBSel_i      : SrcBSel_t;
+  signal forwardSelA_i  : forwardSel_t;
+  signal forwardSelB_i  : forwardSel_t;
+  signal regDest_i      : RegAddr_t;
+  signal srcAAddr_i     : RegAddr_t;
+  signal srcBAddr_i     : RegAddr_t;
+
+
+  -- ctrl
+  signal opCode_i      : OpCode_t;
+  signal funcCode_i    : FuncCode_t;
+  signal branchField_i : BranchField_t;
+  signal aluSel_i      : AluSel_t;
+  signal memRw_n_i     : bit_t;
+  signal memReq_i      : bit_t;
+  signal regSel_i      : RegSel_t;
+  signal memRegSel_i   : bit_t;
+  signal aluRes_i      : word_t;
+  -- cache controller
+  signal iRdy_i        : bit_t;
+  signal iWriteData_i  : word_t;
+  signal dWriteData_i  : word_t;
+  signal dAddr_i       : word_t;
+  signal dReadData_i   : word_t;
+  signal dRdy_i        : bit_t;
+  signal memHold_i     : bit_t;
+
+  -- forwarding
+  signal EXMEMdest_i : RegAddr_t;
+  signal MEMWBdest_i : RegAddr_t;
+  signal IDEXdest_i  : regAddr_t;
+  signal IFIDRs_i    : RegAddr_t;
+  signal IFIDRt_i    : RegAddr_t;
+  signal aluFSelA_i  : bit_t;
+  signal aluFSelB_i  : bit_t;
+
+  -- stall
+  signal stall_i  : bit_t;
+  signal IDEXRs_i : RegAddr_t;
+  signal IDEXRt_i : RegAddr_t;
+
+  signal hold_i     : bit_t;
+  signal MEMWBsrc_i : word_t;
+  signal iRData_i   : word_t;
+  signal iAddr_i    : word_t;
+
+
+begin  -- structural
+
+  -----------------------------------------------------------------------------
+  -- Component Instanciation
+  -----------------------------------------------------------------------------
+  if_stage_1 : if_stage
+    port map (
+      clk       => clk,
+      rst       => rst,
+      branchSel => branchSel_i,
+      stall     => stallIF_i,
+      branchPc  => branchPc_i,
+      pcInc     => pcInc_i,
+      pc        => pc_i);
+
+  id_stage_1 : id_stage
+    port map (
+      clk         => clk,
+      rst         => rst,
+      pc          => IFIDPcInc,
+      iData       => iData_i,
+      pcSel       => pcSel_i,
+      writeEn     => MEMWBregWen,
+      writeData   => regWriteData_i,
+      writeAddr   => regWriteAddr_i,
+      forwardSelA => forwardSelA_i,
+      forwardSelB => forwardSelB_i,
+      srcIDEX     => aluRes_i,
+      srcEXMEM    => EXMEMaluRes,
+      srcMEMWB    => regWriteData_i,
+      srcBSel     => srcBSel_i,
+      srcASel     => srcASel_i,
+      regSel      => regSel_i,
+      regDest     => regDest_i,
+      srcAAddr    => srcAAddr_i,
+      srcBAddr    => srcBAddr_i,
+      compEq      => compEq_i,
+      compZ       => compZ_i,
+      gtz         => gtz_i,
+      srcA        => srcA_i,
+      srcB        => srcB_i,
+      branchPc    => branchPc_i);
+
+  ctrl_1 : ctrl
+    port map (
+      clk         => clk,
+      rst         => rst,
+      opCode      => opCode_i,
+      funcCode    => funcCode_i,
+      compEq      => compEq_i,
+      compZ       => compZ_i,
+      gtz         => gtz_i,
+      branchField => branchField_i,
+      branchSel   => branchSel_i,
+      regWriteEn  => regWriteEn_i,
+      pcSel       => pcSel_i,
+      srcASel     => srcASel_i,
+      srcBSel     => srcBSel_i,
+      aluSel      => aluSel_i,
+      memRw_n     => memRw_n_i,
+      memReq      => memReq_i,
+      regSel      => regSel_i,
+      memRegSel   => memRegSel_i);
+
+  ex_stage_1 : ex_stage
+    port map (
+      clk        => clk,
+      rst        => rst,
+      aluSel     => IDEXaluSel,
+      srcA       => IDEXsrcA,
+      srcB       => IDEXsrcB,
+      aluFSelA   => aluFSelA_i,
+      aluFSelB   => aluFSelB_i,
+      forwardSrc => regWriteData_i,
+      aluRes     => aluRes_i);
+
+  forwardingunit_1 : forwardingunit
+    port map (
+      IFIDsrcA      => IFIDRs_i,
+      IFIDsrcB      => IFIDRt_i,
+      IDEXdest      => IDEXdest_i,
+      EXMEMdest     => EXMEMdest_i,
+      MEMWBdest     => MEMWBdest_i,
+      IDEXregWrite  => IDEXregWEn,
+      EXMEMregWrite => EXMEMregWEn,
+      MEMWBregWrite => MEMWBregWEn,
+      MEMWBmemSel   => MEMWBmemRegSel,
+      IDEXsrcA      => IDEXRs_i,
+      IDEXsrcB      => IDEXRt_i,
+      aluFSelA      => aluFSelA_i,
+      aluFSelB      => aluFSelB_i,
+      forwardSelA   => forwardSelA_i,
+      forwardSelB   => forwardSelB_i);
+
+  stallunit_1 : stallunit
+    port map (
+      memHold        => memHold_i,
+      IDEXsrcA       => IDEXRs_i,
+      IDEXsrcB       => IDEXRt_i,
+      EXMEMmemRegSel => EXMEMmemRegSel,
+      EXMEMdest      => EXMEMdest_i,
+      stall          => stall_i);
+
+
+  dAddr <= dAddr_i;
+
+  iAddr <= iAddr_i;
+
+  dReadData_i <= dReadData;
+
+  iRData_i <= IRData;
+
+  dRw_n <= EXMEMmemrw;
+
+  dReq <= EXMEMmemreq;
+
+  memHold_i <= memHold;
+
+  dWriteData <= dWriteData_i;
+
+  -----------------------------------------------------------------------------
+  -- MEM Stage
+  -----------------------------------------------------------------------------
+  MEM_STAGE_PROC : process(EXMEMaluRes, EXMEMdest, EXMEMsrcB)
+  begin
+    dAddr_i      <= EXMEMaluRes;
+    dWriteData_i <= EXMEMsrcB;
+
+    EXMEMdest_i <= EXMEMdest;
+
+  end process MEM_STAGE_PROC;
+
+  -----------------------------------------------------------------------------
+  -- WB Stage
+  -----------------------------------------------------------------------------
+  WB_STAGE_PROC : process(MEMWBaluRes, MEMWBdest, MEMWBmemRegSel, dReadData_i,
+                          regWriteAddr_i)
+  begin
+    regWriteData_i <= MEMWBaluRes;
+    MEMWBsrc_i     <= MEMWBaluRes;
+    if MEMWBmemRegSel = '1' then
+      regWriteData_i <= dReadData_i;
+      MEMWBsrc_i     <= dReadData_i;
+    end if;
+
+    regWriteAddr_i <= MEMWBdest;
+
+    MEMWBdest_i <= regWriteAddr_i;
+  end process WB_STAGE_PROC;
+
+  -----------------------------------------------------------------------------
+  -- Process to update all registers
+  -----------------------------------------------------------------------------
+  REG_UPDATE_PROC : process(clk)
+  begin
+    if clk = '1' and clk'event then
+      regBranchTaken <= nextBranchTaken;
+      IFIDPc         <= IFIDPcNext;
+      -- IFID
+      IFIDPcInc      <= IFIDPcIncNext;
+      IFIDiData      <= IFIDiDataNext;
+      -- IDEX
+      IDEXdest       <= IDEXdestNext;
+      IDEXsrcAAddr   <= IDEXsrcAAddrNext;
+      IDEXsrcBAddr   <= IDEXsrcBAddrNext;
+      IDEXsrcA       <= IDEXsrcANext;
+      IDEXsrcB       <= IDEXsrcBNext;
+      IDEXaluSel     <= IDEXaluSelNext;
+      IDEXregWEn     <= IDEXregWEnNext;
+      IDEXmemRegSel  <= IDEXmemRegSelNext;
+      IDEXmemReq     <= IDEXmemReqNext;
+      IDEXmemRw      <= IDEXmemRwNext;
+      -- EXMEM
+      EXMEMaluRes    <= EXMEMaluResNext;
+      EXMEMsrcB      <= EXMEMsrcBNext;
+      EXMEMmemReq    <= EXMEMmemReqNext;
+      EXMEMmemRw     <= EXMEMmemRwNext;
+      EXMEMmemRegSel <= EXMEMmemRegSelNext;
+      EXMEMdest      <= EXMEMdestNext;
+      EXMEMregWEn    <= EXMEMregWEnNext;
+      -- MEMWB
+      MEMWBaluRes    <= MEMWBaluResNext;
+      MEMWBdest      <= MEMWBdestNext;
+      MEMWBmemRegSel <= MEMWBmemRegSelNext;
+      MEMWBregWEn    <= MEMWBregWEnNext;
+
+      if rst = '1' then
+        regBranchTaken <= '0';
+        IFIDPc         <= WORD_ZERO;
+        -- IFID
+        IFIDPcInc      <= WORD_ZERO;
+        IFIDiData      <= WORD_ZERO;
+        -- IDEX
+        IDEXdest       <= (others => '0');
+        IDEXsrcAAddr   <= (others => '0');
+        IDEXsrcBAddr   <= (others => '0');
+        IDEXsrcA       <= (others => '0');
+        IDEXsrcB       <= (others => '0');
+        IDEXaluSel     <= (others => '0');
+        IDEXregWEn     <= '0';
+        IDEXmemRegSel  <= '0';
+        IDEXmemReq     <= '0';
+        IDEXmemRw      <= '1';
+        -- EXMEM
+        EXMEMaluRes    <= (others => '0');
+        EXMEMsrcB      <= (others => '0');
+        EXMEMmemReq    <= '0';
+        EXMEMmemRw     <= '1';
+        EXMEMmemRegSel <= '0';
+        EXMEMdest      <= (others => '0');
+        EXMEMregWEn    <= '0';
+        -- MEMWB
+        MEMWBaluRes    <= (others => '0');
+        MEMWBdest      <= (others => '0');
+        MEMWBmemRegSel <= '0';
+        MEMWBregWEn    <= '0';
+
+      end if;
+    end if;
+  end process REG_UPDATE_PROC;
+
+  -----------------------------------------------------------------------------
+  -- NEXT logic
+  -----------------------------------------------------------------------------
+  REG_NEXT_PROC : process(EXMEMaluRes, EXMEMdest, EXMEMmemRegSel, EXMEMmemReq,
+                          EXMEMmemRw, EXMEMregWEn, EXMEMsrcB, IDEXdest,
+                          IDEXmemRegSel, IDEXmemReq, IDEXmemRw, IDEXregWEn,
+                          IDEXsrcB, IFIDPc, IFIDPcInc, IFIDiData, MEMWBaluRes,
+                          MEMWBdest, MEMWBmemRegSel, MEMWBregWEn, aluRes_i,
+                          aluSel_i, branchSel_i, iRData_i, memHold_i,
+                          memRegSel_i, memReq_i, memRw_n_i, pcInc_i, pc_i,
+                          regDest_i, regWriteEn_i, srcAAddr_i, srcA_i,
+                          srcBAddr_i, srcB_i, stall_i)
+  begin
+    IFIDPcNext         <= pc_i;
+    -- IFID next
+    IFIDPcIncNext      <= pcInc_i;
+    IFIDiDataNext      <= iRData_i;
+    -- IDEX next
+    IDEXdestNext       <= regDest_i;
+    IDEXsrcAAddrNext   <= srcAAddr_i;
+    IDEXsrcBAddrNext   <= srcBAddr_i;
+    IDEXsrcANext       <= srcA_i;
+    IDEXsrcBNext       <= srcB_i;
+    IDEXaluSelNext     <= aluSel_i;
+    IDEXregWEnNext     <= regWriteEn_i;
+    IDEXmemRegSelNext  <= memRegSel_i;
+    IDEXmemReqNext     <= memReq_i;
+    IDEXmemRwNext      <= memRw_n_i;
+    -- EXMEM next
+    EXMEMaluResNext    <= aluRes_i;
+    EXMEMsrcBNext      <= IDEXsrcB;
+    EXMEMmemRegSelNext <= IDEXmemRegSel;
+    EXMEMmemRwNext     <= IDEXmemRw;
+    EXMEMmemReqNext    <= IDEXmemReq;
+    EXMEMdestNext      <= IDEXdest;
+    EXMEMregWEnNext    <= IDEXregWEn;
+    -- MEMWB
+    MEMWBaluResNext    <= EXMEMaluRes;
+    MEMWBdestNext      <= EXMEMdest;
+    MEMWBmemRegSelNext <= EXMEMmemRegSel;
+    MEMWBregWEnNext    <= EXMEMregWEn;
+
+    nextBranchTaken <= '0';
+
+    -- Stall
+    if stall_i = '1' then
+      IFIDPcNext    <= IFIDPc;
+      -- IFID next
+      IFIDPcIncNext <= IFIDPcInc;
+      IFIDiDataNext <= IFIDiData;
+      -- IDEX next
+
+      -- EXMEM next
+      EXMEMaluResNext    <= EXMEMaluRes;
+      EXMEMsrcBNext      <= EXMEMsrcB;
+      EXMEMmemRegSelNext <= EXMEMmemRegSel;
+      EXMEMmemRwNext     <= EXMEMmemRw;
+      EXMEMmemReqNext    <= EXMEMmemReq;
+      EXMEMdestNext      <= EXMEMdest;
+      EXMEMregWEnNext    <= EXMEMregWEn;
+      -- MEMWB
+      MEMWBaluResNext    <= MEMWBaluRes;
+      MEMWBdestNext      <= MEMWBdest;
+      MEMWBmemRegSelNext <= MEMWBmemRegSel;
+      MEMWBregWEnNext    <= MEMWBregWEn;
+
+      if memHold_i = '0' then
+        EXMEMdestNext   <= (others => '0');
+        EXMEMregWEnNext <= '0';
+        EXMEMaluResNext <= (others => '0');
+        EXMEMmemReqNext <= '0';
+        EXMEMmemRwNext  <= '1';
+
+        MEMWBaluResNext    <= EXMEMaluRes;
+        MEMWBDestNext      <= EXMEMdest;
+        MEMWBmemRegSelNext <= EXMEMmemRegSel;
+        MEMWBregWEnNext    <= EXMEMregWEn;
+      end if;
+
+    elsif branchSel_i = '1' then
+      nextBranchTaken <= '1';
+    end if;
+
+  end process REG_NEXT_PROC;
+
+  I_ADDR_PROC : process(IFIDPc, pc_i, stallIF_i)
+  begin
+    iAddr_i <= pc_i;
+    if stallIF_i = '1' then
+      iAddr_i <= IFIDPc;
+    end if;
+  end process I_ADDR_PROC;
+
+  I_DATA_PROC : process(IFIDiData, iData_i, iRData_i, regBranchTaken,
+                        stall_i)
+  begin
+    iData_i <= iRData_i;
+
+    opCode_i <= iRData_i(31 downto 26);
+
+    funcCode_i <= iRData_i(5 downto 0);
+
+    branchField_i <= iRData_i(20 downto 16);
+
+    IFIDRs_i <= iRData_i(25 downto 21);
+
+    IFIDRt_i <= iRData_i(20 downto 16);
+
+    if regBranchTaken = '1' then
+      iData_i       <= WORD_ZERO;
+      opCode_i      <= (others => '0');
+      funcCode_i    <= (others => '0');
+      branchField_i <= (others => '0');
+      IFIDRt_i      <= (others => '0');
+      IFIDRs_i      <= (others => '0');
+    end if;
+    if stall_i = '1' then
+      iData_i <= IFIDiData;
+
+      opCode_i <= iData_i(31 downto 26);
+
+      funcCode_i <= iData_i(5 downto 0);
+
+      branchField_i <= iData_i(20 downto 16);
+
+      IFIDRs_i <= iData_i(25 downto 21);
+
+      IFIDRt_i <= iData_i(20 downto 16);
+    end if;
+  end process I_DATA_PROC;
+
+  stallIF_i <= stall_i;
+
+  IDEXdest_i <= IDEXdest;
+
+  IDEXRt_i <= IDEXsrcBAddr;
+
+  IDEXRs_i <= IDEXsrcAAddr;
+
+end structural;

@@ -1,0 +1,77 @@
+library ieee;
+use ieee.std_logic_1164.all;
+use work.types.all;
+
+entity nomem_tb is
+
+end nomem_tb;
+
+architecture tb_nomem of nomem_tb is
+
+  component mips_core
+    port (
+      clk        : in  bit_t;
+      rst        : in  bit_t;
+      iRdata     : in  word_t;
+      memHold    : in  bit_t;
+      dReadData  : in  word_t;
+      iAddr      : out word_t;
+      dAddr      : out word_t;
+      dRw_n      : out bit_t;
+      dReq       : out bit_t;
+      dWriteData : out word_t);
+  end component;
+
+  signal clk        : bit_t;
+  signal rst        : bit_t;
+  signal iRdata     : word_t;
+  signal memHold    : bit_t;
+  signal dReadData  : word_t;
+  signal iAddr      : word_t;
+  signal dAddr      : word_t;
+  signal dRw_n      : bit_t;
+  signal dReq       : bit_t;
+  signal dWriteData : word_t;
+
+  constant clk_period : time := 50 ns;
+  
+begin  -- tb_nomem
+
+  CLK_PROC : process
+  begin
+    clk <= '0';
+    wait for clk_period/2;
+    clk <= '1';
+    wait for clk_period/2;
+  end process;
+
+  STIM_PROC : process
+  begin
+    rst <= '1';
+    iRdata <= WORD_ZERO;
+    memHold <= '0';
+    dReadData <= WORD_ZERO;
+    wait for clk_period;
+    rst <= '0';
+    wait for clk_period;
+    wait until clk = '1';
+    iRdata <= x"3c011001"
+    wait;
+    
+
+  end process STIM_PROC;
+
+  mips_core_1 : mips_core
+    port map (
+      clk        => clk,
+      rst        => rst,
+      iRdata     => iRdata,
+      memHold    => memHold,
+      dReadData  => dReadData,
+      iAddr      => iAddr,
+      dAddr      => dAddr,
+      dRw_n      => dRw_n,
+      dReq       => dReq,
+      dWriteData => dWriteData);
+
+end tb_nomem;

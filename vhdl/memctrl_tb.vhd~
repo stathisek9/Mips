@@ -1,0 +1,116 @@
+-------------------------------------------------------------------------------
+-- Title      : Testbench for design "memctrl"
+-- Project    : 
+-------------------------------------------------------------------------------
+-- File       : memctrl_tb.vhd
+-- Author     : Henrik Ljunger  <ael10hlj@gunne.fransg>
+-- Company    : 
+-- Created    : 2015-05-26
+-- Last update: 2015-05-26
+-- Platform   : 
+-- Standard   : VHDL'87
+-------------------------------------------------------------------------------
+-- Description: 
+-------------------------------------------------------------------------------
+-- Copyright (c) 2015 
+-------------------------------------------------------------------------------
+-- Revisions  :
+-- Date        Version  Author  Description
+-- 2015-05-26  1.0      ael10hlj        Created
+-------------------------------------------------------------------------------
+
+library ieee;
+use ieee.std_logic_1164.all;
+
+-------------------------------------------------------------------------------
+
+entity memctrl_tb is
+
+end memctrl_tb;
+
+-------------------------------------------------------------------------------
+
+architecture arch_memctrl_tb of memctrl_tb is
+
+  component memctrl
+    port (
+      clk      : in    bit_t;
+      rst      : in    bit_t;
+      iaddr    : in    word_t;
+      daddr    : in    word_t;
+      dWData   : in    word_t;
+      dRw_n    : in    bit_t;
+      dReq     : in    bit_t;
+      RAMHold  : in    bit_t;
+      RAMAddr  : out   word_t;
+      RAMreq   : out   bit_t;
+      RAMrw_n  : out   bit_t;
+      RAMDATA  : inout word_t;
+      coreHold : out   bit_t;
+      iData    : out   word_t;
+      dRData   : out   word_t);
+  end component;
+
+  -- component ports
+  signal clk      : bit_t;
+  signal rst      : bit_t;
+  signal iaddr    : word_t;
+  signal daddr    : word_t;
+  signal dWData   : word_t;
+  signal dRw_n    : bit_t;
+  signal dReq     : bit_t;
+  signal RAMHold  : bit_t;
+  signal RAMAddr  : word_t;
+  signal RAMreq   : bit_t;
+  signal RAMrw_n  : bit_t;
+  signal RAMDATA  : word_t;
+  signal coreHold : bit_t;
+  signal iData    : word_t;
+  signal dRData   : word_t;
+
+  -- clock
+  constant clk_period : time := 10 ns;
+  
+
+begin  -- memctrl_tb
+
+  -- component instantiation
+  DUT : memctrl
+    port map (
+      clk      => clk,
+      rst      => rst,
+      iaddr    => iaddr,
+      daddr    => daddr,
+      dWData   => dWData,
+      dRw_n    => dRw_n,
+      dReq     => dReq,
+      RAMHold  => RAMHold,
+      RAMAddr  => RAMAddr,
+      RAMreq   => RAMreq,
+      RAMrw_n  => RAMrw_n,
+      RAMDATA  => RAMDATA,
+      coreHold => coreHold,
+      iData    => iData,
+      dRData   => dRData);
+
+
+  CLK_PROC : process
+  begin  -- process CLK_PROC
+    clk <= '0';
+    wait for clk_period/2;
+    clk <= '1';
+    wait for clk_period/2;
+  end process CLK_PROC;
+
+  -- waveform generation
+  WaveGen_Proc : process
+  begin
+    -- insert signal assignments here
+
+    wait until Clk = '1';
+  end process WaveGen_Proc;
+
+  
+
+end arch_memctrl_tb;
+

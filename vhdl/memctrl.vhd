@@ -1,0 +1,222 @@
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+use work.types.all;
+
+entity memctrl is
+
+  port (
+    clk       : in  bit_t;
+    rst       : in  bit_t;
+    dataAck   : in  bit_t;
+    extRdy    : in  bit_t;
+    iaddr     : in  word_t;
+    daddr     : in  word_t;
+    dWData    : in  word_t;
+    dRw       : in  bit_t;
+    dReq      : in  bit_t;
+    memHold   : in  bit_t;
+    flushData : in  bit_t;
+    memAddr   : out word_t;
+    memreq    : out bit_t;
+    memRw     : out bit_t;
+    memDataR  : in  word_t;
+    memDataW  : out word_t;
+    coreHold  : out bit_t;
+    iData     : out word_t;
+    dRData    : out word_t
+    );
+
+end memctrl;
+architecture behavioral of memctrl is
+
+  component memwrapper
+    port (
+      clk    : in  bit_t;
+      wData  : in  word_t;
+      addr   : in  word_t;
+      rw_n   : in  bit_t;
+      memReq : in  bit_t;
+      rdy    : out bit_t;
+      rData  : out word_t);
+  end component;
+
+  type state_t is (rstState, idle, flushState);
+  signal currState, nextState      : state_t;
+  signal regFillAddr, nextFillAddr : word_t;
+  signal addrCnt, nextAddrCnt      : addrCnt_t;
+  signal memSel                    : bit_t;
+  signal nextMemSel                : bit_t;
+
+  signal iaddri  : word_t;
+  signal irwi    : bit_t;
+  signal iReqi   : bit_t;
+  signal iwDatai : word_t;
+  signal irdyi   : bit_t;
+  signal irDatai : word_t;
+
+  signal daddri  : word_t;
+  signal drwi    : bit_t;
+  signal dReqi   : bit_t;
+  signal dwDatai : word_t;
+  signal drdyi   : bit_t;
+  signal drDatai : word_t;
+
+begin  -- behavioral
+
+  REG_PROC : process(clk)
+  begin
+    if clk = '1' and clk'event then
+      currState   <= nextState;
+      regFillAddr <= nextFillAddr;
+      addrCnt     <= nextAddrCnt;
+      memSel      <= nextMemSel;
+      if rst = '1' then
+        currState   <= rstState;
+        regFillAddr <= INSTRUCTION_START;
+        addrCnt     <= (others => '0');
+        memSel      <= '0';
+
+      end if;
+    end if;
+  end process REG_PROC;
+
+  FSM_PROC : process (addrCnt, currState, dRw, dWData, daddr, dataAck, drDatai,
+                      flushData, iaddr, irDatai, memDataR, memSel, regFillAddr)
+  begin  -- process FSM_PROC
+
+    coreHold <= '0';
+    memAddr  <= WORD_ZERO;
+    memreq   <= '0';
+    memRw    <= '1';
+    memDataW <= WORD_ZERO;
+
+    iData <= WORD_ZERO;
+
+    dRData <= WORD_ZERO;
+
+    nextState    <= idle;
+    nextFillAddr <= WORD_ZERO;
+    nextAddrCnt  <= (others => '0');
+    nextMemSel   <= '0';
+
+    irwi    <= '1';
+    iReqi   <= '1';
+    iwDatai <= WORD_ZERO;
+    iaddri  <= (others => '0');
+
+    dReqi   <= '1';
+    drwi    <= '1';
+    dwDatai <= WORD_ZERO;
+    daddri  <= (others => '0');
+
+    case currState is
+      when rstState =>
+        coreHold <= '1';
+        memReq   <= '1';
+
+        if memSel = '0' then            -- INSTRUCTION
+          memAddr            <= regFillAddr;
+          iaddri(6 downto 2) <= addrCnt;
+          nextState          <= rstState;
+          if dataAck = '1' then
+            nextFillAddr <= std_logic_vector(unsigned(regFillAddr) + 4);
+            iwDatai      <= memDataR;
+            irwi         <= '0';
+            nextAddrCnt  <= std_logic_vector(unsigned(addrCnt) + 1);
+
+            if addrCnt = counterLimit then
+              nextMemSel   <= '1';
+              nextAddrCnt  <= (others => '0');
+              nextFillAddr <= DATA_START;
+            end if;
+          else
+            nextFillAddr <= regFillAddr;
+            iwDatai      <= WORD_ZERO;
+            nextAddrCnt  <= addrCnt;
+          end if;
+
+        else                            --DATA
+          memAddr            <= regFillAddr;
+          daddri(6 downto 2) <= addrCnt;
+          nextState          <= rstState;
+          nextMemSel         <= '1';
+          if dataAck = '1' then
+            nextFillAddr <= std_logic_vector(unsigned(regFillAddr) + 4);
+            drwi         <= '0';
+            dwDatai      <= memDataR;
+            nextAddrCnt  <= std_logic_vector(unsigned(addrCnt) + 1);
+            if addrCnt = counterLimit then
+              nextAddrCnt <= (others => '0');
+              nextState   <= idle;
+            end if;
+          else
+            nextFillAddr <= regFillAddr;
+            dwDatai      <= WORD_ZERO;
+            nextAddrCnt  <= addrCnt;
+
+          end if;
+        end if;
+
+      when idle =>
+        iaddri <= iaddr;
+        iData  <= irDatai;
+
+        daddri  <= daddr;
+        drwi    <= dRw;
+        dwDatai <= dWData;
+        dRData  <= drDatai;
+
+        if flushData = '1' then
+          nextState    <= flushState;
+          nextFillAddr <= DATA_START;
+        end if;
+
+      when flushState =>
+        coreHold  <= '1';
+        memreq    <= '1';
+        memRw     <= '0';
+        memAddr   <= regFillAddr;
+        memDataW  <= drDatai;
+        daddri    <= regFillAddr;
+        nextState <= flushState;
+        if dataAck = '1' then
+          nextFillAddr <= std_logic_vector(unsigned(regFillAddr) + 4);
+          nextAddrCnt  <= std_logic_vector(unsigned(addrCnt) + 1);
+          if addrCnt = counterLimit then
+            nextAddrCnt <= (others => '0');
+            nextState   <= idle;
+          end if;
+        else
+          nextFillAddr <= regFillAddr;
+          nextAddrCnt  <= addrCnt;
+        end if;
+
+
+      when others => null;
+    end case;
+  end process FSM_PROC;
+
+  IMEM : memwrapper
+    port map (
+      clk    => clk,
+      wData  => iwDatai,
+      addr   => iaddri,
+      rw_n     => irwi,
+      memReq => iReqi,
+      rdy    => irdyi,
+      rData  => irDatai);
+
+  DMEM : memwrapper
+    port map (
+      clk    => clk,
+      wData  => dwDatai,
+      addr   => daddri,
+      rw_n   => drwi,
+      memReq => dReqi,
+      rdy    => drdyi,
+      rData  => drDatai);
+
+end behavioral;
+
+

@@ -1,0 +1,49 @@
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+use work.types.all;
+
+entity test_sys is
+  port (
+    clk       : in  bit_t;
+    rst       : in  bit_t;
+    branchSel : in  bit_t;
+    stall     : in  bit_t;
+    branchPc  : in  word_t;
+    pcInc     : out word_t;
+    pc        : out word_t);
+end test_sys;
+
+architecture behavioral of test_sys is
+
+  component if_stage
+    port (
+      clk       : in  bit_t;
+      rst       : in  bit_t;
+      branchSel : in  bit_t;
+      stall     : in  bit_t;
+      branchPc  : in  word_t;
+      pcInc     : out word_t;
+      pc        : out word_t);
+  end component;
+
+  signal branchSeli : bit_t;
+  signal stalli     : bit_t;
+  signal branchPci  : word_t;
+  signal pcInci     : word_t;
+  signal pci        : word_t;
+  
+begin  -- behavioral
+
+  if_stage_1 : if_stage
+    port map (
+      clk       => clk,
+      rst       => rst,
+      branchSel => branchSeli,
+      stall     => stalli,
+      branchPc  => branchPci,
+      pcInc     => pcInci,
+      pc        => pci);
+
+end behavioral;
+
