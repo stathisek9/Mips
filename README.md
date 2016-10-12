@@ -1,2 +1,4 @@
-# Mips
-32 bit MIPS architecture with extended instruction set
+# Mips Microprocessor
+32-bit MIPS architecture with extended instruction set.
+
+
